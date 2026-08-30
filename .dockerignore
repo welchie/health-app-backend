@@ -1,0 +1,13 @@
+.gradle/
+build/
+.idea/
+.git/
+*.iml
+*.log
+.DS_Store
+.DS_Store?
+out/
+gradlew.bat
+Dockerfile
+docker-compose.yml
+README.md
