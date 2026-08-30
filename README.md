@@ -86,9 +86,19 @@ Synchronizes locally modified blood pressure and weight records from the client 
 *   JDK 25
 
 ### Run the Server
-Run the Spring Boot application locally:
+Run the Spring Boot application locally using the default in-memory H2 database:
 ```bash
 ./gradlew bootRun
+```
+
+To run the application with the **PostgreSQL production profile (`prod`)**:
+```bash
+# Optional: Override database connection details using environment variables
+export SPRING_DATASOURCE_URL=jdbc:postgresql://localhost:5432/healthapp
+export SPRING_DATASOURCE_USERNAME=postgres
+export SPRING_DATASOURCE_PASSWORD=mysecurepassword
+
+./gradlew bootRun --args='--spring.profiles.active=prod'
 ```
 *   **API Base URL:** `http://localhost:8080/api/v1`
 *   **Swagger UI Dashboard:** [http://localhost:8080/swagger-ui/index.html](http://localhost:8080/swagger-ui/index.html)
