@@ -107,6 +107,13 @@ export SPRING_DATASOURCE_PASSWORD=mysecurepassword
     *   **User Name:** `sa`
     *   **Password:** *(leave blank)*
 
+### Run via Docker Compose (Local PostgreSQL Integration)
+You can build the backend Docker image and spin up both the application and a PostgreSQL database locally using Docker Compose:
+```bash
+docker compose up --build
+```
+This builds the multi-stage Docker image, runs the database, waits until PostgreSQL is fully healthy, and launches the backend service connected to the database.
+
 ### Run Tests and Coverage Reports
 Run integration and unit tests:
 ```bash
