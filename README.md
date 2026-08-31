@@ -123,3 +123,42 @@ View the generated JaCoCo coverage report in your browser:
 ```bash
 open build/reports/jacoco/test/html/index.html
 ```
+
+### AWS Deployment with Terraform
+A production-ready AWS ECS Fargate and RDS PostgreSQL skeleton Terraform configuration is located in the `terraform/` directory.
+
+#### Prerequisites
+*   [Terraform CLI](https://developer.hashicorp.com/terraform/downloads) installed.
+*   An active AWS account with configured CLI credentials (via `aws configure` or environment variables).
+
+#### Deployment Instructions
+1.  **Initialize Terraform:**
+    ```bash
+    cd terraform
+    terraform init
+    ```
+2.  **View and plan infrastructure additions:**
+    ```bash
+    terraform plan -out=tfplan
+    ```
+3.  **Apply and provision AWS resources:**
+    ```bash
+    terraform apply tfplan
+    ```
+4.  **Publish Docker image to AWS ECR:**
+    Retrieve the generated ECR registry URL from Terraform outputs, authenticate your local Docker daemon, and push your image:
+    ```bash
+    # Get ECR repository URL from Terraform outputs
+    ECR_URL=$(terraform output -raw ecr_repository_url)
+
+    # Authenticate Docker against ECR
+    aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin $ECR_URL
+
+    # Build and tag local docker image
+    docker build -t $ECR_URL:latest ..
+
+    # Push to ECR (This will trigger ECS to launch task instance)
+    docker push $ECR_URL:latest
+    ```
+5.  **Access public API:**
+    Access the load balancer using the `alb_dns_name` outputted by Terraform (e.g. `http://health-app-backend-alb-xxxx.us-east-1.elb.amazonaws.com`).
