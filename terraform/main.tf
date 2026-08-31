@@ -171,6 +171,7 @@ resource "aws_instance" "server" {
   subnet_id            = aws_subnet.public.id
   security_groups      = [aws_security_group.server.id]
   iam_instance_profile = aws_iam_instance_profile.ec2_profile.name
+  key_name             = var.ssh_key_name != "" ? var.ssh_key_name : null
 
   # Root disk size (20GB - fits within AWS 30GB Free Tier limit)
   root_block_device {

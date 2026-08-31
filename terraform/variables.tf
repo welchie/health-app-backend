@@ -46,3 +46,9 @@ variable "domain_name" {
   type        = string
   default     = ""
 }
+
+variable "ssh_key_name" {
+  description = "Optional: The name of an existing EC2 Key Pair in your AWS account to enable SSH access"
+  type        = string
+  default     = ""
+}
