@@ -19,9 +19,9 @@ provider "aws" {
   }
 }
 
-# ================= Networking (VPC) =================
+# ================= Networking (Budget VPC) =================
 
-# VPC
+# Simple VPC
 resource "aws_vpc" "main" {
   cidr_block           = "10.0.0.0/16"
   enable_dns_hostnames = true
@@ -32,47 +32,15 @@ resource "aws_vpc" "main" {
   }
 }
 
-# Public Subnets (for ALB)
-resource "aws_subnet" "public_1" {
-  vpc_id            = aws_vpc.main.id
-  cidr_block        = "10.0.1.0/24"
-  availability_zone = "${var.aws_region}a"
+# Single Public Subnet (No private subnets, no NAT gateway to save money)
+resource "aws_subnet" "public" {
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = "10.0.1.0/24"
+  availability_zone       = "${var.aws_region}a"
   map_public_ip_on_launch = true
 
   tags = {
-    Name = "${var.app_name}-public-subnet-1"
-  }
-}
-
-resource "aws_subnet" "public_2" {
-  vpc_id            = aws_vpc.main.id
-  cidr_block        = "10.0.2.0/24"
-  availability_zone = "${var.aws_region}b"
-  map_public_ip_on_launch = true
-
-  tags = {
-    Name = "${var.app_name}-public-subnet-2"
-  }
-}
-
-# Private Subnets (for ECS and RDS)
-resource "aws_subnet" "private_1" {
-  vpc_id            = aws_vpc.main.id
-  cidr_block        = "10.0.10.0/24"
-  availability_zone = "${var.aws_region}a"
-
-  tags = {
-    Name = "${var.app_name}-private-subnet-1"
-  }
-}
-
-resource "aws_subnet" "private_2" {
-  vpc_id            = aws_vpc.main.id
-  cidr_block        = "10.0.11.0/24"
-  availability_zone = "${var.aws_region}b"
-
-  tags = {
-    Name = "${var.app_name}-private-subnet-2"
+    Name = "${var.app_name}-public-subnet"
   }
 }
 
@@ -85,28 +53,7 @@ resource "aws_internet_gateway" "gw" {
   }
 }
 
-# Elastic IP for NAT Gateway
-resource "aws_eip" "nat" {
-  domain = "vpc"
-
-  tags = {
-    Name = "${var.app_name}-nat-eip"
-  }
-}
-
-# NAT Gateway (to allow private subnets internet access for image downloads, APIs)
-resource "aws_nat_gateway" "nat" {
-  allocation_id = aws_eip.nat.id
-  subnet_id     = aws_subnet.public_1.id
-
-  tags = {
-    Name = "${var.app_name}-nat-gw"
-  }
-
-  depends_on = [aws_internet_gateway.gw]
-}
-
-# Routing for Public Subnets
+# Route Table
 resource "aws_route_table" "public" {
   vpc_id = aws_vpc.main.id
 
@@ -120,36 +67,151 @@ resource "aws_route_table" "public" {
   }
 }
 
-resource "aws_route_table_association" "public_1" {
-  subnet_id      = aws_subnet.public_1.id
+# Associate Route Table
+resource "aws_route_table_association" "public" {
+  subnet_id      = aws_subnet.public.id
   route_table_id = aws_route_table.public.id
 }
 
-resource "aws_route_table_association" "public_2" {
-  subnet_id      = aws_subnet.public_2.id
-  route_table_id = aws_route_table.public.id
-}
+# ================= Security Group =================
 
-# Routing for Private Subnets (via NAT Gateway)
-resource "aws_route_table" "private" {
-  vpc_id = aws_vpc.main.id
+resource "aws_security_group" "server" {
+  name        = "${var.app_name}-server-sg"
+  description = "Security Group for Docker Host EC2 instance"
+  vpc_id      = aws_vpc.main.id
 
-  route {
-    cidr_block     = "0.0.0.0/0"
-    nat_gateway_id = aws_nat_gateway.nat.id
+  # Ingress Rules
+  ingress {
+    description = "Allow HTTP"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "Allow HTTPS"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "Allow SSH (Optional: restrict this CIDR in production!)"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  # Egress Rules
+  egress {
+    description = "Allow all outbound traffic"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
   tags = {
-    Name = "${var.app_name}-private-rt"
+    Name = "${var.app_name}-server-sg"
   }
 }
 
-resource "aws_route_table_association" "private_1" {
-  subnet_id      = aws_subnet.private_1.id
-  route_table_id = aws_route_table.private.id
+# ================= IAM Instance Profile (for SSM Session Manager) =================
+
+resource "aws_iam_role" "ec2_role" {
+  name = "${var.app_name}-ec2-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action    = "sts:AssumeRole"
+        Effect    = "Allow"
+        Principal = { Service = "ec2.amazonaws.com" }
+      }
+    ]
+  })
 }
 
-resource "aws_route_table_association" "private_2" {
-  subnet_id      = aws_subnet.private_2.id
-  route_table_id = aws_route_table.private.id
+# Attachment for AWS Systems Manager (SSM) so you can connect via CLI/Console without SSH keys
+resource "aws_iam_role_policy_attachment" "ssm" {
+  role       = aws_iam_role.ec2_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
+resource "aws_iam_instance_profile" "ec2_profile" {
+  name = "${var.app_name}-ec2-instance-profile"
+  role = aws_iam_role.ec2_role.name
+}
+
+# ================= EC2 Instance =================
+
+# Retrieve latest stable Amazon Linux 2023 AMI
+data "aws_ami" "amazon_linux_2023" {
+  most_recent = true
+  owners      = ["amazon"]
+
+  filter {
+    name   = "name"
+    values = ["al2023-ami-2023.*-x86_64"]
+  }
+
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
+}
+
+resource "aws_instance" "server" {
+  ami                  = data.aws_ami.amazon_linux_2023.id
+  instance_type        = var.instance_type
+  subnet_id            = aws_subnet.public.id
+  security_groups      = [aws_security_group.server.id]
+  iam_instance_profile = aws_iam_instance_profile.ec2_profile.name
+
+  # Root disk size (20GB - fits within AWS 30GB Free Tier limit)
+  root_block_device {
+    volume_size           = 20
+    volume_type           = "gp3"
+    delete_on_termination = true
+  }
+
+  # User Data script: Automatically installs Docker & Docker Compose on boot
+  user_data = <<-EOF
+              #!/bin/bash
+              # Update packages
+              dnf update -y
+
+              # Install Docker
+              dnf install -y docker
+              systemctl enable --now docker
+              usermod -aG docker ec2-user
+
+              # Install Docker Compose V2
+              mkdir -p /usr/local/lib/docker/cli-plugins
+              curl -SL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64 -o /usr/local/lib/docker/cli-plugins/docker-compose
+              chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+
+              # Create directories for backend deployment
+              mkdir -p /home/ec2-user/app
+              chown -R ec2-user:ec2-user /home/ec2-user/app
+              EOF
+
+  tags = {
+    Name = "${var.app_name}-docker-server"
+  }
+}
+
+# ================= Elastic IP =================
+
+resource "aws_eip" "ip" {
+  instance = aws_instance.server.id
+  domain   = "vpc"
+
+  tags = {
+    Name = "${var.app_name}-server-eip"
+  }
 }

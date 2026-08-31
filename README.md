@@ -124,41 +124,55 @@ View the generated JaCoCo coverage report in your browser:
 open build/reports/jacoco/test/html/index.html
 ```
 
-### AWS Deployment with Terraform
-A production-ready AWS ECS Fargate and RDS PostgreSQL skeleton Terraform configuration is located in the `terraform/` directory.
+### AWS Deployment with Terraform (Budget-Friendly EC2)
+A budget-friendly AWS deployment configuration is located in the `terraform/` directory. It provisions:
+*   A single **EC2 Instance** (`t3.micro` - Free Tier eligible).
+*   An **Elastic IP** (static public IP).
+*   **VPC Security Group** exposing only ports 80 (HTTP), 443 (HTTPS), and 22 (SSH).
+*   **IAM Instance Profile** enabling secure connection via AWS Systems Manager (SSM) without SSH keys.
+*   Automatic installation of **Docker** and **Docker Compose** on startup.
 
 #### Prerequisites
 *   [Terraform CLI](https://developer.hashicorp.com/terraform/downloads) installed.
-*   An active AWS account with configured CLI credentials (via `aws configure` or environment variables).
+*   An active AWS account with configured CLI credentials.
 
-#### Deployment Instructions
-1.  **Initialize Terraform:**
+#### Step 1: Provision Infrastructure
+1.  Navigate to the directory and initialize Terraform:
     ```bash
     cd terraform
     terraform init
     ```
-2.  **View and plan infrastructure additions:**
+2.  Plan and apply the configuration:
     ```bash
     terraform plan -out=tfplan
-    ```
-3.  **Apply and provision AWS resources:**
-    ```bash
     terraform apply tfplan
     ```
-4.  **Publish Docker image to AWS ECR:**
-    Retrieve the generated ECR registry URL from Terraform outputs, authenticate your local Docker daemon, and push your image:
+3.  Note the outputs:
+    *   `server_public_ip`: Point your domain's **A record** to this IP (e.g. `api.yourdomain.com`).
+    *   `ssm_connect_command`: Copy this command to log into the terminal of the EC2 instance without SSH keys.
+
+#### Step 2: Deploy Code to EC2 Instance
+You can deploy your code directly to the server using `rsync` or by cloning your Git repository directly on the EC2 instance.
+Using `rsync` (replace `YOUR_PEM_KEY` with your SSH key path or use standard credentials):
+```bash
+# From the project root folder (health-app-backend)
+rsync -avz --exclude-from='.dockerignore' . ec2-user@<server_public_ip>:/home/ec2-user/app
+```
+
+#### Step 3: Run the Application
+1.  Log into your EC2 server using AWS SSM:
     ```bash
-    # Get ECR repository URL from Terraform outputs
-    ECR_URL=$(terraform output -raw ecr_repository_url)
-
-    # Authenticate Docker against ECR
-    aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin $ECR_URL
-
-    # Build and tag local docker image
-    docker build -t $ECR_URL:latest ..
-
-    # Push to ECR (This will trigger ECS to launch task instance)
-    docker push $ECR_URL:latest
+    aws ssm start-session --target <instance_id> --region <aws_region>
     ```
-5.  **Access public API:**
-    Access the load balancer using the `alb_dns_name` outputted by Terraform (e.g. `http://health-app-backend-alb-xxxx.us-east-1.elb.amazonaws.com`).
+    *(Alternatively, use `ssh ec2-user@<server_public_ip>` if you configured SSH keys).*
+2.  Switch to the app directory and start the services:
+    ```bash
+    cd /home/ec2-user/app
+    
+    # Run with standard HTTP (port 80)
+    docker compose -f docker-compose.prod.yml up --build -d
+
+    # OR Run with auto-generated SSL (HTTPS on port 443) using Caddy
+    DOMAIN_NAME=api.yourdomain.com docker compose -f docker-compose.prod.yml up --build -d
+    ```
+    *Caddy will automatically fetch, configure, and renew your SSL certificates from Let's Encrypt for your domain.*

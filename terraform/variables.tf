@@ -13,13 +13,13 @@ variable "environment" {
 variable "app_name" {
   description = "Name of the application"
   type        = string
-  default     = "health-app-backend"
+  default     = "health-app"
 }
 
-variable "container_port" {
-  description = "Port exposed by the backend container"
-  type        = number
-  default     = 8080
+variable "instance_type" {
+  description = "EC2 instance type (t3.micro is Free Tier eligible or extremely low cost)"
+  type        = string
+  default     = "t3.micro"
 }
 
 variable "db_name" {
@@ -31,24 +31,18 @@ variable "db_name" {
 variable "db_username" {
   description = "Database administrator username"
   type        = string
-  default     = "dbadmin"
+  default     = "postgres"
 }
 
 variable "db_password" {
-  description = "Database administrator password (override in production!)"
+  description = "Database administrator password"
   type        = string
   sensitive   = true
-  default     = "SuperSecurePassword123!"
+  default     = "mysecurepassword"
 }
 
-variable "ecs_cpu" {
-  description = "CPU units for ECS Fargate task (1024 = 1 vCPU)"
-  type        = number
-  default     = 256
-}
-
-variable "ecs_memory" {
-  description = "Memory (in MB) for ECS Fargate task"
-  type        = number
-  default     = 512
+variable "domain_name" {
+  description = "Optional: Domain name pointing to this server (e.g. api.yourdomain.com) for auto-SSL"
+  type        = string
+  default     = ""
 }
