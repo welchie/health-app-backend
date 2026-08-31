@@ -8,6 +8,3 @@ build/
 .DS_Store?
 out/
 gradlew.bat
-Dockerfile
-docker-compose.yml
-README.md
