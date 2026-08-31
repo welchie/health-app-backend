@@ -1,0 +1,60 @@
+services:
+  caddy:
+    image: caddy:2-alpine
+    container_name: healthapp-proxy
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN_NAME: ${DOMAIN_NAME:-:80}
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    # Automatically reverse proxy to the Spring Boot backend container on port 8080
+    # Caddy will automatically generate and renew SSL certs if DOMAIN_NAME is set to a valid domain
+    entrypoint: ["caddy", "reverse-proxy", "--from", "$${DOMAIN_NAME}", "--to", "backend:8080"]
+
+  postgres:
+    image: postgres:18-alpine
+    container_name: healthapp-db
+    restart: always
+    environment:
+      POSTGRES_DB: ${DB_NAME:-healthapp}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-mysecurepassword}
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d $${DB_NAME:-healthapp}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: healthapp-backend
+    restart: always
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${DB_NAME:-healthapp}
+      SPRING_DATASOURCE_USERNAME: ${DB_USER:-postgres}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-mysecurepassword}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:
