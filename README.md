@@ -125,3 +125,65 @@ View the generated JaCoCo coverage report in your browser:
 ```bash
 open build/reports/jacoco/test/html/index.html
 ```
+
+---
+
+## AWS Deployment & Updates (Budget-Friendly EC2)
+
+The backend service can be deployed to a single AWS EC2 instance (`t3.micro`, Free Tier eligible) managed with Terraform and Docker Compose.
+
+* **Networking & Security:** VPC Security Group exposing ports `80` (HTTP), `443` (HTTPS), and `22` (SSH).
+* **Access:** AWS Systems Manager (SSM) Session Manager or direct SSH.
+* **SSL / Reverse Proxy:** Caddy reverse proxies port 80/443 to Spring Boot on port 8080 with automatic Let's Encrypt certificates.
+
+### Step 1: Provision Infrastructure (Initial Setup)
+1. Navigate to the terraform directory:
+   ```bash
+   cd terraform
+   terraform init
+   terraform apply
+   ```
+2. Note the outputs:
+   * `server_public_ip`: Public IP of your EC2 instance.
+   * `ssm_connect_command`: Command to connect via AWS SSM.
+
+### Step 2: Push / Sync Code to EC2
+From the project root on your local machine, run `rsync` to sync your code to `/home/ec2-user/app`:
+```bash
+rsync -avz --exclude-from='.dockerignore' --exclude='.git' --exclude='build' . ec2-user@<server_public_ip>:/home/ec2-user/app
+```
+
+### Step 3: Rebuild & Restart Containers on EC2
+Run the build and restart command directly via SSH (or log in via AWS SSM):
+
+#### **Production Setup (with Caddy Reverse Proxy on Port 80/443 - Recommended):**
+```bash
+ssh ec2-user@<server_public_ip> "cd /home/ec2-user/app && docker compose -f docker-compose.prod.yml up --build -d"
+```
+*(With custom domain and automatic SSL certificates):*
+```bash
+ssh ec2-user@<server_public_ip> "cd /home/ec2-user/app && DOMAIN_NAME=api.yourdomain.com docker compose -f docker-compose.prod.yml up --build -d"
+```
+
+#### **Standard Setup (Direct Port 8080):**
+```bash
+ssh ec2-user@<server_public_ip> "cd /home/ec2-user/app && docker compose up --build -d"
+```
+*Note: If running standard setup, port 8080 is only accessible within the EC2 host unless port 8080 is opened in the AWS Security Group.*
+
+### Step 4: Verify Deployment & Actuator Health Endpoint
+Check that the service is running and healthy:
+
+* **From your local machine (via Caddy on port 80):**
+  ```bash
+  curl -i http://<server_public_ip>/actuator/health
+  ```
+* **From inside the EC2 instance (direct port 8080):**
+  ```bash
+  ssh ec2-user@<server_public_ip> "curl -i http://localhost:8080/actuator/health"
+  ```
+  Expected response:
+  ```json
+  {"groups":["liveness","readiness"],"status":"UP"}
+  ```
+
