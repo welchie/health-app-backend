@@ -10,6 +10,7 @@ This is the Spring Boot backend service for the **Personal Health App**, providi
 *   **Framework:** Spring Boot 4.1.1 & Spring Data JPA
 *   **Database:** H2 Database (In-Memory for zero-setup local development)
 *   **Documentation:** Springdoc OpenAPI (Swagger UI)
+*   **Operations & Health:** Spring Boot Actuator
 *   **Build Tool:** Gradle
 
 ---
@@ -101,6 +102,7 @@ export SPRING_DATASOURCE_PASSWORD=mysecurepassword
 ./gradlew bootRun --args='--spring.profiles.active=prod'
 ```
 *   **API Base URL:** `http://localhost:8080/api/v1`
+*   **Actuator Health Endpoint:** [http://localhost:8080/actuator/health](http://localhost:8080/actuator/health)
 *   **Swagger UI Dashboard:** [http://localhost:8080/swagger-ui/index.html](http://localhost:8080/swagger-ui/index.html)
 *   **H2 Database Console:** [http://localhost:8080/h2-console](http://localhost:8080/h2-console)
     *   **JDBC URL:** `jdbc:h2:mem:healthappdb`
