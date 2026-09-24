@@ -13,7 +13,7 @@ services:
       - caddy_config:/config
     # Automatically reverse proxy to the Spring Boot backend container on port 8080
     # Caddy will automatically generate and renew SSL certs if DOMAIN_NAME is set to a valid domain
-    entrypoint: ["caddy", "reverse-proxy", "--from", "$${DOMAIN_NAME}", "--to", "backend:8080"]
+    entrypoint: ["sh", "-c", "caddy reverse-proxy --from $${DOMAIN_NAME:-:80} --to backend:8080"]
 
   postgres:
     image: postgres:18-alpine
@@ -41,6 +41,8 @@ services:
       dockerfile: Dockerfile
     container_name: healthapp-backend
     restart: always
+    ports:
+      - "8080:8080"
     environment:
       SPRING_PROFILES_ACTIVE: prod
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${DB_NAME:-healthapp}

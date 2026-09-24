@@ -186,6 +186,13 @@ resource "aws_instance" "server" {
               # Update packages
               dnf update -y
 
+              # Configure 2GB Swap Memory (ensures builds and JVMs do not exhaust 1GB RAM on t3.micro)
+              fallocate -l 2G /swapfile
+              chmod 600 /swapfile
+              mkswap /swapfile
+              swapon /swapfile
+              echo '/swapfile swap swap defaults 0 0' >> /etc/fstab
+
               # Install Docker
               dnf install -y docker
               systemctl enable --now docker
