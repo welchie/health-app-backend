@@ -187,3 +187,8 @@ Check that the service is running and healthy:
   {"groups":["liveness","readiness"],"status":"UP"}
   ```
 
+### Step 5: Health Monitoring & Automated Email Alerts
+The EC2 server runs an automated health monitor (`/usr/local/bin/check-health.sh`) every minute that queries `/actuator/health`.
+* Metrics are pushed to AWS CloudWatch under `HealthApp/BackendUnhealthy`.
+* If the backend container fails or goes down, a CloudWatch alarm (`health-app-backend-unhealthy`) automatically sends an email notification via Amazon SNS to the configured alert email.
+

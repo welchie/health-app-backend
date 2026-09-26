@@ -52,3 +52,10 @@ variable "ssh_key_name" {
   type        = string
   default     = ""
 }
+
+variable "alert_email" {
+  description = "Email address to receive health check and monitoring alerts"
+  type        = string
+  default     = "welchie99@gmail.com"
+}
+
