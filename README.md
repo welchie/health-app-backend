@@ -10,6 +10,7 @@ This is the Spring Boot backend service for the **Personal Health App**, providi
 *   **Framework:** Spring Boot 4.1.1 & Spring Data JPA
 *   **Database:** H2 Database (In-Memory for zero-setup local development)
 *   **Documentation:** Springdoc OpenAPI (Swagger UI)
+*   **Operations & Health:** Spring Boot Actuator
 *   **Build Tool:** Gradle
 
 ---
@@ -101,6 +102,7 @@ export SPRING_DATASOURCE_PASSWORD=mysecurepassword
 ./gradlew bootRun --args='--spring.profiles.active=prod'
 ```
 *   **API Base URL:** `http://localhost:8080/api/v1`
+*   **Actuator Health Endpoint:** [http://localhost:8080/actuator/health](http://localhost:8080/actuator/health)
 *   **Swagger UI Dashboard:** [http://localhost:8080/swagger-ui/index.html](http://localhost:8080/swagger-ui/index.html)
 *   **H2 Database Console:** [http://localhost:8080/h2-console](http://localhost:8080/h2-console)
     *   **JDBC URL:** `jdbc:h2:mem:healthappdb`
@@ -124,55 +126,64 @@ View the generated JaCoCo coverage report in your browser:
 open build/reports/jacoco/test/html/index.html
 ```
 
-### AWS Deployment with Terraform (Budget-Friendly EC2)
-A budget-friendly AWS deployment configuration is located in the `terraform/` directory. It provisions:
-*   A single **EC2 Instance** (`t3.micro` - Free Tier eligible).
-*   An **Elastic IP** (static public IP).
-*   **VPC Security Group** exposing only ports 80 (HTTP), 443 (HTTPS), and 22 (SSH).
-*   **IAM Instance Profile** enabling secure connection via AWS Systems Manager (SSM) without SSH keys.
-*   Automatic installation of **Docker** and **Docker Compose** on startup.
+---
 
-#### Prerequisites
-*   [Terraform CLI](https://developer.hashicorp.com/terraform/downloads) installed.
-*   An active AWS account with configured CLI credentials.
+## AWS Deployment & Updates (Budget-Friendly EC2)
 
-#### Step 1: Provision Infrastructure
-1.  Navigate to the directory and initialize Terraform:
-    ```bash
-    cd terraform
-    terraform init
-    ```
-2.  Plan and apply the configuration:
-    ```bash
-    terraform plan -out=tfplan
-    terraform apply tfplan
-    ```
-3.  Note the outputs:
-    *   `server_public_ip`: Point your domain's **A record** to this IP (e.g. `api.yourdomain.com`).
-    *   `ssm_connect_command`: Copy this command to log into the terminal of the EC2 instance without SSH keys.
+The backend service can be deployed to a single AWS EC2 instance (`t3.micro`, Free Tier eligible) managed with Terraform and Docker Compose.
 
-#### Step 2: Deploy Code to EC2 Instance
-You can deploy your code directly to the server using `rsync` or by cloning your Git repository directly on the EC2 instance.
-Using `rsync` (replace `YOUR_PEM_KEY` with your SSH key path or use standard credentials):
+* **Networking & Security:** VPC Security Group exposing ports `80` (HTTP), `443` (HTTPS), and `22` (SSH).
+* **Access:** AWS Systems Manager (SSM) Session Manager or direct SSH.
+* **SSL / Reverse Proxy:** Caddy reverse proxies port 80/443 to Spring Boot on port 8080 with automatic Let's Encrypt certificates.
+
+### Step 1: Provision Infrastructure (Initial Setup)
+1. Navigate to the terraform directory:
+   ```bash
+   cd terraform
+   terraform init
+   terraform apply
+   ```
+2. Note the outputs:
+   * `server_public_ip`: Public IP of your EC2 instance.
+   * `ssm_connect_command`: Command to connect via AWS SSM.
+
+### Step 2: Push / Sync Code to EC2
+From the project root on your local machine, run `rsync` to sync your code to `/home/ec2-user/app`:
 ```bash
-# From the project root folder (health-app-backend)
-rsync -avz --exclude-from='.dockerignore' . ec2-user@<server_public_ip>:/home/ec2-user/app
+rsync -avz --exclude-from='.dockerignore' --exclude='.git' --exclude='build' . ec2-user@<server_public_ip>:/home/ec2-user/app
 ```
 
-#### Step 3: Run the Application
-1.  Log into your EC2 server using AWS SSM:
-    ```bash
-    aws ssm start-session --target <instance_id> --region <aws_region>
-    ```
-    *(Alternatively, use `ssh ec2-user@<server_public_ip>` if you configured SSH keys).*
-2.  Switch to the app directory and start the services:
-    ```bash
-    cd /home/ec2-user/app
-    
-    # Run with standard HTTP (port 80)
-    docker compose -f docker-compose.prod.yml up --build -d
+### Step 3: Rebuild & Restart Containers on EC2
+Run the build and restart command directly via SSH (or log in via AWS SSM):
 
-    # OR Run with auto-generated SSL (HTTPS on port 443) using Caddy
-    DOMAIN_NAME=api.yourdomain.com docker compose -f docker-compose.prod.yml up --build -d
-    ```
-    *Caddy will automatically fetch, configure, and renew your SSL certificates from Let's Encrypt for your domain.*
+#### **Production Setup (with Caddy Reverse Proxy on Port 80/443 - Recommended):**
+```bash
+ssh ec2-user@<server_public_ip> "cd /home/ec2-user/app && docker compose -f docker-compose.prod.yml up --build -d"
+```
+*(With custom domain and automatic SSL certificates):*
+```bash
+ssh ec2-user@<server_public_ip> "cd /home/ec2-user/app && DOMAIN_NAME=api.yourdomain.com docker compose -f docker-compose.prod.yml up --build -d"
+```
+
+#### **Standard Setup (Direct Port 8080):**
+```bash
+ssh ec2-user@<server_public_ip> "cd /home/ec2-user/app && docker compose up --build -d"
+```
+*Note: If running standard setup, port 8080 is only accessible within the EC2 host unless port 8080 is opened in the AWS Security Group.*
+
+### Step 4: Verify Deployment & Actuator Health Endpoint
+Check that the service is running and healthy:
+
+* **From your local machine (via Caddy on port 80):**
+  ```bash
+  curl -i http://<server_public_ip>/actuator/health
+  ```
+* **From inside the EC2 instance (direct port 8080):**
+  ```bash
+  ssh ec2-user@<server_public_ip> "curl -i http://localhost:8080/actuator/health"
+  ```
+  Expected response:
+  ```json
+  {"groups":["liveness","readiness"],"status":"UP"}
+  ```
+
