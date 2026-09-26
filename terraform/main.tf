@@ -142,6 +142,12 @@ resource "aws_iam_role_policy_attachment" "ssm" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
+# Attachment for CloudWatch so the instance can publish custom health metrics
+resource "aws_iam_role_policy_attachment" "cloudwatch" {
+  role       = aws_iam_role.ec2_role.name
+  policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
+}
+
 resource "aws_iam_instance_profile" "ec2_profile" {
   name = "${var.app_name}-ec2-instance-profile"
   role = aws_iam_role.ec2_role.name
@@ -166,12 +172,16 @@ data "aws_ami" "amazon_linux_2023" {
 }
 
 resource "aws_instance" "server" {
-  ami                  = data.aws_ami.amazon_linux_2023.id
-  instance_type        = var.instance_type
-  subnet_id            = aws_subnet.public.id
-  security_groups      = [aws_security_group.server.id]
-  iam_instance_profile = aws_iam_instance_profile.ec2_profile.name
-  key_name             = var.ssh_key_name != "" ? var.ssh_key_name : null
+  ami                    = data.aws_ami.amazon_linux_2023.id
+  instance_type          = var.instance_type
+  subnet_id              = aws_subnet.public.id
+  vpc_security_group_ids = [aws_security_group.server.id]
+  iam_instance_profile   = aws_iam_instance_profile.ec2_profile.name
+  key_name               = var.ssh_key_name != "" ? var.ssh_key_name : null
+
+  lifecycle {
+    ignore_changes = [ami, user_data]
+  }
 
   # Root disk size (20GB - fits within AWS 30GB Free Tier limit)
   root_block_device {
@@ -183,8 +193,10 @@ resource "aws_instance" "server" {
   # User Data script: Automatically installs Docker & Docker Compose on boot
   user_data = <<-EOF
               #!/bin/bash
-              # Update packages
+              # Update packages and install cron daemon
               dnf update -y
+              dnf install -y cronie
+              systemctl enable --now crond
 
               # Configure 2GB Swap Memory (ensures builds and JVMs do not exhaust 1GB RAM on t3.micro)
               fallocate -l 2G /swapfile
@@ -210,6 +222,22 @@ resource "aws_instance" "server" {
               # Create directories for backend deployment
               mkdir -p /home/ec2-user/app
               chown -R ec2-user:ec2-user /home/ec2-user/app
+
+              # Setup health check monitor script
+              cat << 'HEALTH_EOF' > /usr/local/bin/check-health.sh
+              #!/bin/bash
+              HTTP_CODE=$(curl -s -o /dev/null -w "%%{http_code}" --connect-timeout 5 http://127.0.0.1:8080/actuator/health)
+              if [ "$HTTP_CODE" -eq 200 ]; then
+                VALUE=0
+              else
+                VALUE=1
+              fi
+              aws cloudwatch put-metric-data --namespace "HealthApp" --metric-name "BackendUnhealthy" --value "$VALUE" --region "${var.aws_region}"
+              HEALTH_EOF
+              chmod +x /usr/local/bin/check-health.sh
+
+              # Add cron job to run health check every minute
+              echo "* * * * * /usr/local/bin/check-health.sh >/dev/null 2>&1" | crontab -
               EOF
 
   tags = {
@@ -227,3 +255,39 @@ resource "aws_eip" "ip" {
     Name = "${var.app_name}-server-eip"
   }
 }
+
+# ================= Health Monitoring & Alerts =================
+
+# SNS Topic for Health Alerts
+resource "aws_sns_topic" "alerts" {
+  name = "${var.app_name}-alerts"
+}
+
+# SNS Email Subscription
+resource "aws_sns_topic_subscription" "email" {
+  count     = var.alert_email != "" ? 1 : 0
+  topic_arn = aws_sns_topic.alerts.arn
+  protocol  = "email"
+  endpoint  = var.alert_email
+}
+
+# CloudWatch Alarm for Backend Service Health
+resource "aws_cloudwatch_metric_alarm" "backend_unhealthy" {
+  alarm_name          = "${var.app_name}-backend-unhealthy"
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  evaluation_periods  = 1
+  metric_name         = "BackendUnhealthy"
+  namespace           = "HealthApp"
+  period              = 60
+  statistic           = "Maximum"
+  threshold           = 1
+  alarm_description   = "Triggers when the healthapp-backend container fails its /actuator/health check"
+  alarm_actions       = [aws_sns_topic.alerts.arn]
+  ok_actions          = [aws_sns_topic.alerts.arn]
+  treat_missing_data  = "notBreaching"
+
+  tags = {
+    Name = "${var.app_name}-health-alarm"
+  }
+}
+

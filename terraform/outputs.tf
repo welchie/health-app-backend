@@ -12,3 +12,9 @@ output "ssh_connect_command" {
   description = "Standard SSH command to connect (requires adding an SSH key to the instance)"
   value       = "ssh ec2-user@${aws_eip.ip.public_ip}"
 }
+
+output "alert_topic_arn" {
+  description = "ARN of the SNS topic used for health alerts"
+  value       = aws_sns_topic.alerts.arn
+}
+

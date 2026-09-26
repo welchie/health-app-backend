@@ -44,7 +44,7 @@ variable "db_password" {
 variable "domain_name" {
   description = "Optional: Domain name pointing to this server (e.g. api.yourdomain.com) for auto-SSL"
   type        = string
-  default     = ""
+  default     = "api.weewelchie.org"
 }
 
 variable "ssh_key_name" {
@@ -52,3 +52,10 @@ variable "ssh_key_name" {
   type        = string
   default     = ""
 }
+
+variable "alert_email" {
+  description = "Email address to receive health check and monitoring alerts"
+  type        = string
+  default     = "welchie99@gmail.com"
+}
+
