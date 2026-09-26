@@ -1,0 +1,12 @@
+{
+    auto_https disable_redirects
+}
+
+http://ec2-108-133-59-82.eu-west-1.compute.amazonaws.com, http://108.133.59.82, :80 {
+    reverse_proxy backend:8080
+}
+
+ec2-108-133-59-82.eu-west-1.compute.amazonaws.com {
+    tls internal
+    reverse_proxy backend:8080
+}
