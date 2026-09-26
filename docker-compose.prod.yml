@@ -11,9 +11,7 @@ services:
     volumes:
       - caddy_data:/data
       - caddy_config:/config
-    # Automatically reverse proxy to the Spring Boot backend container on port 8080
-    # Caddy will automatically generate and renew SSL certs if DOMAIN_NAME is set to a valid domain
-    entrypoint: ["sh", "-c", "caddy reverse-proxy --from $${DOMAIN_NAME:-:80} --to backend:8080"]
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
 
   postgres:
     image: postgres:18-alpine
