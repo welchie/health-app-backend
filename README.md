@@ -171,24 +171,91 @@ ssh ec2-user@<server_public_ip> "cd /home/ec2-user/app && docker compose up --bu
 ```
 *Note: If running standard setup, port 8080 is only accessible within the EC2 host unless port 8080 is opened in the AWS Security Group.*
 
-### Step 4: Verify Deployment & Actuator Health Endpoint
+### Step 4: Verify Deployment & Health Status
 Check that the service is running and healthy:
 
-* **From your local machine (via Caddy on port 80):**
+* **Via your Custom Domain (HTTPS):**
+  ```bash
+  curl -i https://api.weewelchie.org/actuator/health
+  ```
+  *(Or open `https://api.weewelchie.org/actuator/health` directly in any web browser).*
+
+* **From your local machine via HTTP (verifies automatic redirect to HTTPS):**
   ```bash
   curl -i http://<server_public_ip>/actuator/health
   ```
-* **From inside the EC2 instance (direct port 8080):**
+
+* **Directly on the EC2 host (port 8080):**
   ```bash
   ssh ec2-user@<server_public_ip> "curl -i http://localhost:8080/actuator/health"
   ```
-  Expected response:
-  ```json
-  {"groups":["liveness","readiness"],"status":"UP"}
-  ```
 
-### Step 5: Health Monitoring & Automated Email Alerts
-The EC2 server runs an automated health monitor (`/usr/local/bin/check-health.sh`) every minute that queries `/actuator/health`.
-* Metrics are pushed to AWS CloudWatch under `HealthApp/BackendUnhealthy`.
-* If the backend container fails or goes down, a CloudWatch alarm (`health-app-backend-unhealthy`) automatically sends an email notification via Amazon SNS to the configured alert email.
+**Expected JSON Response (200 OK):**
+```json
+{"groups":["liveness","readiness"],"status":"UP"}
+```
+
+---
+
+### Step 5: Configure AWS CloudWatch Alarms & SNS Email Notifications
+
+The system includes automated health monitoring using AWS CloudWatch and Amazon SNS.
+
+#### How It Works:
+1. **On-Host Monitoring:** A script (`/usr/local/bin/check-health.sh`) runs every minute via cron on the EC2 host.
+2. **Metric Publishing:** It probes `http://127.0.0.1:8080/actuator/health`. If healthy (HTTP 200), it publishes `BackendUnhealthy = 0` to CloudWatch namespace `HealthApp`. If down or non-200, it publishes `BackendUnhealthy = 1`.
+3. **CloudWatch Alarm:** The alarm (`health-app-backend-unhealthy`) monitors `BackendUnhealthy >= 1`.
+4. **Email Notification:** When triggered, an alert is dispatched via Amazon SNS to the configured `alert_email`.
+
+#### Configuration via Terraform:
+1. In `terraform/variables.tf`, set your email:
+   ```hcl
+   variable "alert_email" {
+     default = "your-email@example.com"
+   }
+   ```
+2. Apply the Terraform configuration:
+   ```bash
+   cd terraform
+   terraform apply
+   ```
+3. **Confirm Subscription:** AWS SNS sends a confirmation email with the subject **`AWS Notification - Subscription Confirmation`**. Click the **"Confirm subscription"** link in that email to authorize AWS to send alert emails to your inbox.
+
+---
+
+### Step 6: Test That Alerts Fire
+
+You can verify that your alert pipeline and email notifications work using any of the following methods:
+
+#### Method 1: Instant Alarm Simulation (Fastest & Zero Downtime — Recommended)
+Trigger the CloudWatch alarm directly using the AWS CLI:
+```bash
+aws cloudwatch set-alarm-state \
+  --alarm-name "health-app-backend-unhealthy" \
+  --state-value ALARM \
+  --state-reason "Testing alert notifications" \
+  --region eu-west-1
+```
+* **Result:** CloudWatch transitions to **`ALARM`** and immediately sends an alert email to your inbox.
+* **Auto-Recovery:** Within 60 seconds, the cron job on EC2 reports that the service is healthy (`0`), and CloudWatch sends an **`OK`** recovery email.
+
+#### Method 2: Simulate Failure Metric from EC2
+Push a failure metric (`1`) directly from the server:
+```bash
+ssh ec2-user@<server_public_ip> "aws cloudwatch put-metric-data --namespace 'HealthApp' --metric-name 'BackendUnhealthy' --value 1 --region eu-west-1"
+```
+* **Result:** CloudWatch receives an unhealthy datapoint, triggers the alarm, and sends the email alert.
+
+#### Method 3: Real End-to-End Container Failure Test
+Test the full failure-detection pipeline by stopping the backend container:
+1. **Stop the container:**
+   ```bash
+   ssh ec2-user@<server_public_ip> "cd /home/ec2-user/app && docker compose -f docker-compose.prod.yml stop backend"
+   ```
+2. **Wait 60–90 seconds:** The cron monitor detects that `/actuator/health` is unreachable, pushes `BackendUnhealthy = 1`, and CloudWatch sends the **`ALARM`** email.
+3. **Restart the container:**
+   ```bash
+   ssh ec2-user@<server_public_ip> "cd /home/ec2-user/app && docker compose -f docker-compose.prod.yml start backend"
+   ```
+4. **Wait 60 seconds:** The monitor verifies the service is back up, pushes `BackendUnhealthy = 0`, and CloudWatch sends the **`OK`** recovery email.
 
