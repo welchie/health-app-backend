@@ -44,7 +44,7 @@ variable "db_password" {
 variable "domain_name" {
   description = "Optional: Domain name pointing to this server (e.g. api.yourdomain.com) for auto-SSL"
   type        = string
-  default     = ""
+  default     = "api.weewelchie.org"
 }
 
 variable "ssh_key_name" {
