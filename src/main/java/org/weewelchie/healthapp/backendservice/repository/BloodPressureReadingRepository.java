@@ -17,4 +17,9 @@ public interface BloodPressureReadingRepository extends JpaRepository<BloodPress
     List<BloodPressureReading> findByDeviceToken(UUID deviceToken);
 
     List<BloodPressureReading> findByDeviceTokenAndServerUpdatedAtGreaterThan(UUID deviceToken, Instant lastSyncTime);
+
+    List<BloodPressureReading> findByDeviceTokenAndDeletedFalseOrderByTakenAtDesc(UUID deviceToken);
+
+    List<BloodPressureReading> findByDeviceTokenAndDeletedFalseAndTakenAtBetweenOrderByTakenAtDesc(UUID deviceToken, Instant start, Instant end);
 }
+

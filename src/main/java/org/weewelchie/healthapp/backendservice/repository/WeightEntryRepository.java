@@ -17,4 +17,9 @@ public interface WeightEntryRepository extends JpaRepository<WeightEntry, Long> 
     List<WeightEntry> findByDeviceToken(UUID deviceToken);
 
     List<WeightEntry> findByDeviceTokenAndServerUpdatedAtGreaterThan(UUID deviceToken, Instant lastSyncTime);
+
+    List<WeightEntry> findByDeviceTokenAndDeletedFalseOrderByTakenAtDesc(UUID deviceToken);
+
+    List<WeightEntry> findByDeviceTokenAndDeletedFalseAndTakenAtBetweenOrderByTakenAtDesc(UUID deviceToken, Instant start, Instant end);
 }
+
