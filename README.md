@@ -130,7 +130,7 @@ open build/reports/jacoco/test/html/index.html
 
 ## AWS Deployment & Updates (Budget-Friendly EC2)
 
-The backend service can be deployed to a single AWS EC2 instance (`t3.micro`, Free Tier eligible) managed with Terraform and Docker Compose.
+The backend service can be deployed to a single AWS EC2 instance (`t4g.micro`, AWS Graviton2 ARM64) managed with Terraform and Docker Compose.
 
 * **Networking & Security:** VPC Security Group exposing ports `80` (HTTP), `443` (HTTPS), and `22` (SSH).
 * **Access:** AWS Systems Manager (SSM) Session Manager or direct SSH.

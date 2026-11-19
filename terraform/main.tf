@@ -162,7 +162,7 @@ data "aws_ami" "amazon_linux_2023" {
 
   filter {
     name   = "name"
-    values = ["al2023-ami-2023.*-x86_64"]
+    values = ["al2023-ami-2023.*-${var.instance_architecture}"]
   }
 
   filter {
@@ -198,7 +198,7 @@ resource "aws_instance" "server" {
               dnf install -y cronie
               systemctl enable --now crond
 
-              # Configure 2GB Swap Memory (ensures builds and JVMs do not exhaust 1GB RAM on t3.micro)
+              # Configure 2GB Swap Memory (ensures builds and JVMs do not exhaust 1GB RAM on t4g.micro)
               fallocate -l 2G /swapfile
               chmod 600 /swapfile
               mkswap /swapfile
@@ -210,13 +210,23 @@ resource "aws_instance" "server" {
               systemctl enable --now docker
               usermod -aG docker ec2-user
 
+              # Determine architecture for Docker plugins
+              ARCH=$(uname -m)
+              if [ "$ARCH" = "aarch64" ]; then
+                COMPOSE_ARCH="aarch64"
+                BUILDX_ARCH="arm64"
+              else
+                COMPOSE_ARCH="x86_64"
+                BUILDX_ARCH="amd64"
+              fi
+
               # Install Docker Compose V2
               mkdir -p /usr/local/lib/docker/cli-plugins
-              curl -SL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64 -o /usr/local/lib/docker/cli-plugins/docker-compose
+              curl -SL "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-$${COMPOSE_ARCH}" -o /usr/local/lib/docker/cli-plugins/docker-compose
               chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
 
               # Install Docker Buildx plugin
-              curl -SL https://github.com/docker/buildx/releases/download/v0.17.1/buildx-v0.17.1.linux-amd64 -o /usr/local/lib/docker/cli-plugins/docker-buildx
+              curl -SL "https://github.com/docker/buildx/releases/download/v0.17.1/buildx-v0.17.1.linux-$${BUILDX_ARCH}" -o /usr/local/lib/docker/cli-plugins/docker-buildx
               chmod +x /usr/local/lib/docker/cli-plugins/docker-buildx
 
               # Create directories for backend deployment

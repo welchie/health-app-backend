@@ -46,3 +46,7 @@ override.tf.json
 *_override.tf.json
 .terraform.lock.hcl
 *.out
+
+# Database Backups
+backups/
+*.sql

@@ -17,9 +17,15 @@ variable "app_name" {
 }
 
 variable "instance_type" {
-  description = "EC2 instance type (t3.micro is Free Tier eligible or extremely low cost)"
+  description = "EC2 instance type (t4g.micro Graviton2 ARM64)"
   type        = string
-  default     = "t3.micro"
+  default     = "t4g.micro"
+}
+
+variable "instance_architecture" {
+  description = "Architecture for the EC2 instance (arm64 for Graviton, x86_64 for Intel/AMD)"
+  type        = string
+  default     = "arm64"
 }
 
 variable "db_name" {
